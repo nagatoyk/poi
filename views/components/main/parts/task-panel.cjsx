@@ -3,7 +3,8 @@
 CSON = require 'cson'
 fs = require 'fs-extra'
 {join} = require 'path-extra'
-{__, __n} = require 'i18n'
+__ = i18n.main.__.bind(i18n.main)
+__n = i18n.main.__n.bind(i18n.main)
 
 zero = 331200000
 isDifferentDay = (time1, time2) ->
@@ -28,7 +29,7 @@ getCategory = (api_category) ->
       return '#ffffff'
     when 1
       return '#19BB2E'
-    when 2
+    when 2, 8
       return '#e73939'
     when 3
       return '#87da61'
@@ -51,7 +52,7 @@ getStyleByProgress = (progress) ->
       return 'primary'
     when '80%'
       return 'info'
-    when '达成'
+    when __ 'Completed'
       return 'success'
     else
       return 'default'
@@ -72,6 +73,15 @@ emptyTask =
   progress: ''
   category: 0
   type: 0
+
+lockedTask =
+  name: __ 'Locked'
+  id: 100001
+  content: __ "Increase your active quest limit with a \"Headquarters Personnel\"."
+  progress: ''
+  category: 0
+  type: 0
+
 
 memberId = -1
 # Quest Tracking
@@ -95,8 +105,7 @@ activateQuestRecord = (id, progress) ->
       count: 0
       required: 0
       active: true
-    for k, v of questGoals[id]
-      continue if k == 'type'
+    for k, v of questGoals[id] when typeof v is 'object' and v isnt null
       questRecord[id][k] =
         count: v.init
         required: v.required
@@ -104,7 +113,8 @@ activateQuestRecord = (id, progress) ->
       questRecord[id].count += v.init
       questRecord[id].required += v.required
   # Only sync progress with game progress if the quest has only one goal.
-  if Object.keys(questGoals[id]).length == 2
+  goals = (k for own k, v of questGoals[id] when typeof v is 'object' and v isnt null)
+  if goals.length is 1
     progress = switch progress
       when __ 'Completed'
         1
@@ -114,23 +124,45 @@ activateQuestRecord = (id, progress) ->
         0.5
       else
         0
-    for k, v of questGoals[id]
-      continue if k == 'type'
-      before = questRecord[id][k].count
-      questRecord[id][k].count = Math.max(questRecord[id][k].count, Math.ceil(questRecord[id][k].required * progress))
-      questRecord[id].count += questRecord[id][k].count - before
+    [k] = goals
+    # forget to reset questRecord[id][k].count to 0 cause questRecord[id][k].count greater than questRecord[id].count
+    questRecord[id][k].count = Math.min(questRecord[id].count, questRecord[id][k].count)
+    before = questRecord[id][k].count
+    questRecord[id][k].count = Math.max(questRecord[id][k].count, Math.ceil(questRecord[id][k].required * progress))
+    questRecord[id].count += questRecord[id][k].count - before
   syncQuestRecord()
 inactivateQuestRecord = (id) ->
   return unless questRecord[id]?
   questRecord[id].active = false
   syncQuestRecord()
+resetQuestRecord = (types, resetInterval, id, q) ->
+  return unless questGoals[id]?
+  if questGoals[id].type in types
+    clearQuestRecord id
+  else if questGoals[id].resetInterval is resetInterval
+    q.count = 0
+    for own k, v of questGoals[id] when typeof v is 'object' and v isnt null
+      v.init = 0 unless Number.isInteger(v.init)
+      q[k].count = v.init
+      q.count += v.init
+resetQuestRecordDaily = resetQuestRecord.bind(null, [1, 8, 9], 1)
+resetQuestRecordWeekly = resetQuestRecord.bind(null, [2], 2)
+resetQuestRecordMonthly = resetQuestRecord.bind(null, [3], 3)
+resetTask = (types, resetInterval, tasks, idx, task) ->
+  if task.type in types
+    tasks[idx] = Object.clone(emptyTask)
+  else if questGoals[task.id]? and questGoals[task.id].resetInterval is resetInterval
+    task.count = 0
+resetTaskDaily = resetTask.bind(null, [1, 8, 9], 1)
+resetTaskWeekly = resetTask.bind(null, [2], 2)
+resetTaskMonthly = resetTask.bind(null, [3], 3)
 updateQuestRecord = (e, options, delta) ->
   flag = false
   for id, q of questRecord
     continue unless q.active and q[e]?
-    continue if questGoals[id][e].shipType? and options.shipType not in questGoals[id][e].shipType
-    continue if questGoals[id][e].mission? and options.mission not in questGoals[id][e].mission
-    continue if questGoals[id][e].maparea? and options.maparea not in questGoals[id][e].maparea
+    continue if questGoals[id][e]?.shipType? and options.shipType not in questGoals[id][e].shipType
+    continue if questGoals[id][e]?.mission? and options.mission not in questGoals[id][e].mission
+    continue if questGoals[id][e]?.maparea? and options.maparea not in questGoals[id][e].maparea
     before = q[e].count
     q[e].count = Math.min(q[e].required, q[e].count + delta)
     q.count += q[e].count - before
@@ -148,33 +180,50 @@ getToolTip = (id) ->
   }
   </div>
 
+firstBattle = false
+
 TaskPanel = React.createClass
   getInitialState: ->
+    taskLimits: 5
     tasks: [Object.clone(emptyTask), Object.clone(emptyTask), Object.clone(emptyTask),
-            Object.clone(emptyTask), Object.clone(emptyTask), Object.clone(emptyTask)]
+            Object.clone(emptyTask), Object.clone(emptyTask), Object.clone(lockedTask)]
+    show: true
+  shouldComponentUpdate: (nextProps, nextState) ->
+    nextState.show
+  handleVisibleResponse: (e) ->
+    {visible} = e.detail
+    @setState
+      show: visible
   handleResponse: (e) ->
     {method, path, body, postBody} = e.detail
     {tasks} = @state
     flag = false
     switch path
-      when '/kcsapi/api_get_member/basic'
-        memberId = window._nickNameId
+      when '/kcsapi/api_port/port'     #Handle parallel quest show
+        if @state.taskLimits < body.api_parallel_quest_count
+          for i in [@state.taskLimits...body.api_parallel_quest_count]
+            tasks[i] = Object.clone(emptyTask)
+          @setState
+            tasks: tasks
+            taskLimits: body.api_parallel_quest_count
+      when '/kcsapi/api_get_member/require_info'
+        memberId = window._teitokuId
         try
           questRecord = CSON.parseCSONFile join(APPDATA_PATH, "quest_tracking_#{memberId}.cson")
           if questRecord? and questRecord.time?
-            if isDifferentDay((new Date()).getTime(), questRecord.time)
-              for id, q of questRecord
-                continue unless questGoals[id]?
-                delete questRecord[id] if questGoals[id].type in [2, 4, 5]
-            if isDifferentWeek((new Date()).getTime(), questRecord.time)
-              for id, q of questRecord
-                continue unless questGoals[id]?
-                delete questRecord[id] if questGoals[id].type is 3
-            if isDifferentMonth((new Date()).getTime(), questRecord.time)
-              for id, q of questRecord
-                continue unless questGoals[id]?
-                delete questRecord[id] if questGoals[id].type is 6
+            now = (new Date()).getTime()
+            return unless isDifferentDay now, questRecord.time
+            isDiffWeek = isDifferentWeek now, questRecord.time
+            isDiffMonth = isDifferentMonth now, questRecord.time
+            for id, q of questRecord when questGoals[id]?
+              resetQuestRecordDaily id, q
+              if isDiffWeek
+                resetQuestRecordWeekly id, q
+              if isDiffMonth
+                resetQuestRecordMonthly id, q
+            syncQuestRecord()
         catch err
+          console.error err
           questRecord = {}
       when '/kcsapi/api_get_member/questlist'
         return unless body.api_list?
@@ -258,13 +307,14 @@ TaskPanel = React.createClass
       # type: destory_item
       when '/kcsapi/api_req_kousyou/destroyitem2'
         flag = updateQuestRecord('destory_item', null, 1)
+      # type: sally
+      when '/kcsapi/api_req_map/start'
+        flag = updateQuestRecord('sally', null, 1)
     return unless flag
-    for task in tasks
-      continue if task.id == 100000
-      if questGoals[task.id]?
-        task.tracking = true
-        task.percent = questRecord[task.id].count / questRecord[task.id].required
-        task.progress = questRecord[task.id].count + ' / ' + questRecord[task.id].required
+    for task in tasks when task.id < 100000 and questGoals[task.id]? and questRecord[task.id]?
+      task.tracking = true
+      task.percent = questRecord[task.id].count / questRecord[task.id].required
+      task.progress = questRecord[task.id].count + ' / ' + questRecord[task.id].required
     tasks = _.sortBy tasks, (e) -> e.id
     @setState
       tasks: tasks
@@ -305,37 +355,32 @@ TaskPanel = React.createClass
         flag = updateQuestRecord('sinking', {shipType: shipType}, 1) || flag
     if flag
       {tasks} = @state
-      for task in tasks
-        continue if task.id == 100000
-        if questGoals[task.id]?
-          task.tracking = true
-          task.percent = questRecord[task.id].count / questRecord[task.id].required
-          task.progress = questRecord[task.id].count + ' / ' + questRecord[task.id].required
+      for task in tasks when task.id < 100000 and questGoals[task.id]? and questRecord[task.id]?
+        task.tracking = true
+        task.percent = questRecord[task.id].count / questRecord[task.id].required
+        task.progress = questRecord[task.id].count + ' / ' + questRecord[task.id].required
       tasks = _.sortBy tasks, (e) -> e.id
       @setState
         tasks: tasks
   refreshDay: ->
-    return unless isDifferentDay((new Date()).getTime(), prevTime)
+    now = (new Date()).getTime();
+    return unless isDifferentDay now, prevTime
+    isDiffWeek = isDifferentWeek now, prevTime
+    isDiffMonth = isDifferentMonth now, prevTime
     {tasks} = @state
-    for task, idx in tasks
-      continue if task.id == 100000
-      if task.type in [2, 4, 5]
-        clearQuestRecord task.id
-        tasks[idx] = Object.clone(emptyTask)
-      if task.type is 3 and isDifferentWeek((new Date()).getTime(), prevTime)
-        clearQuestRecord task.id
-        tasks[idx] = Object.clone(emptyTask)
-      if task.type is 6 and isDifferentMonth((new Date()).getTime(), prevTime)
-        clearQuestRecord task.id
-        tasks[idx] = Object.clone(emptyTask)
-    for id, q of questRecord
-      continue unless questGoals[id]?
-      if questGoals[id].type in [2, 4, 5]
-        clearQuestRecord id
-      if questGoals[id].type is 3 and isDifferentWeek((new Date()).getTime(), prevTime)
-        clearQuestRecord id
-      if questGoals[id].type is 6 and isDifferentMonth((new Date()).getTime(), prevTime)
-        clearQuestRecord id
+    for task, idx in tasks when task.id < 100000
+      resetTaskDaily tasks, idx, task
+      if isDiffWeek
+        resetTaskWeekly tasks, idx, task
+      if isDiffMonth
+        resetTaskMonthly tasks, idx, task
+    for id, q of questRecord when questGoals[id]?
+      resetQuestRecordDaily id, q
+      if isDiffWeek
+        resetQuestRecordWeekly id, q
+      if isDiffMonth
+        resetQuestRecordMonthly id, q
+    syncQuestRecord()
     tasks = _.sortBy tasks, (e) -> e.id
     @setState
       tasks: tasks
@@ -345,7 +390,7 @@ TaskPanel = React.createClass
       detail:
         tasks: tasks
     window.dispatchEvent event
-    prevTime = (new Date()).getTime()
+    prevTime = now
   handleTaskInfo: (e) ->
     {tasks} = e.detail
     @setState
@@ -354,11 +399,13 @@ TaskPanel = React.createClass
     window.addEventListener 'game.response', @handleResponse
     window.addEventListener 'task.info', @handleTaskInfo
     window.addEventListener 'battle.result', @handleBattleResult
+    window.addEventListener 'view.main.visible', @handleVisibleResponse
     @interval = setInterval @refreshDay, 30000
   componentWillUnmount: ->
     window.removeEventListener 'game.response', @handleResponse
     window.removeEventListener 'task.info', @handleTaskInfo
     window.removeEventListener 'battle.result', @handleBattleResult
+    window.removeEventListener 'view.main.visible', @handleVisibleResponse
     clearInterval @interval
   render: ->
     <Panel bsStyle="default">
@@ -366,21 +413,21 @@ TaskPanel = React.createClass
       for i in [0..5]
         if @state.tasks[i].tracking
           <div className="panel-item task-item" key={i}>
-            <OverlayTrigger placement='left' overlay={<Tooltip><strong>{@state.tasks[i].name}</strong><br />{@state.tasks[i].content}</Tooltip>}>
+            <OverlayTrigger placement={if (!window.doubleTabbed) && (window.layout == 'vertical') then 'top' else 'left'} overlay={<Tooltip id="task-quest-name-#{i}"><strong>{@state.tasks[i].name}</strong><br />{@state.tasks[i].content}</Tooltip>}>
               <div className="quest-name">
                 <span className="cat-indicator" style={backgroundColor: getCategory @state.tasks[i].category}></span>
                 {@state.tasks[i].name}
               </div>
             </OverlayTrigger>
             <div>
-              <OverlayTrigger placement='left' overlay={<Tooltip>{getToolTip @state.tasks[i].id}</Tooltip>}>
+              <OverlayTrigger placement='left' overlay={<Tooltip id="task-progress-#{i}">{getToolTip @state.tasks[i].id}</Tooltip>}>
                 <Label className="quest-progress" bsStyle={getStyleByPercent @state.tasks[i].percent}>{@state.tasks[i].progress}</Label>
               </OverlayTrigger>
             </div>
           </div>
         else
           <div className="panel-item task-item" key={i}>
-            <OverlayTrigger placement='left' overlay={<Tooltip><strong>{@state.tasks[i].name}</strong><br />{@state.tasks[i].content}</Tooltip>}>
+            <OverlayTrigger placement={if (!window.doubleTabbed) && (window.layout == 'vertical') then 'top' else 'left'} overlay={<Tooltip id="task-name-#{i}"><strong>{@state.tasks[i].name}</strong><br />{@state.tasks[i].content}</Tooltip>}>
               <div className="quest-name">
                 <span className="cat-indicator" style={backgroundColor: getCategory @state.tasks[i].category}></span>
                 {@state.tasks[i].name}

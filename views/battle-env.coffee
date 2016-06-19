@@ -153,7 +153,7 @@ window.addEventListener 'game.response', (e) ->
       colorNo = -1
       enemyFormation = 0
     # Normal battle
-    when '/kcsapi/api_req_sortie/battle', '/kcsapi/api_req_battle_midnight/battle', '/kcsapi/api_req_battle_midnight/sp_midnight', '/kcsapi/api_req_sortie/airbattle'
+    when '/kcsapi/api_req_sortie/battle', '/kcsapi/api_req_battle_midnight/battle', '/kcsapi/api_req_battle_midnight/sp_midnight', '/kcsapi/api_req_sortie/airbattle', '/kcsapi/api_req_sortie/ld_airbattle'
       battled = true
       combined = false
       _sortieHp = body.api_nowhps.slice(1, 7)
@@ -163,7 +163,7 @@ window.addEventListener 'game.response', (e) ->
         enemyFormation = body.api_formation[1]
       analogBattle _sortieHp, _enemyHp, _combinedHp, false, false, body
     # Event Combined battle
-    when '/kcsapi/api_req_combined_battle/airbattle', '/kcsapi/api_req_combined_battle/battle', '/kcsapi/api_req_combined_battle/midnight_battle', '/kcsapi/api_req_combined_battle/sp_midnight'
+    when '/kcsapi/api_req_combined_battle/airbattle', '/kcsapi/api_req_combined_battle/battle', '/kcsapi/api_req_combined_battle/midnight_battle', '/kcsapi/api_req_combined_battle/sp_midnight', '/kcsapi/api_req_combined_battle/ld_airbattle'
       battled = true
       combined = true
       _sortieHp = body.api_nowhps.slice(1, 7)
@@ -195,9 +195,12 @@ window.addEventListener 'game.response', (e) ->
             mapCell: currentCell
             quest: body.api_quest_name
             enemy: body.api_enemy_info.api_deck_name
+            combined: combined
+            mvp: if combined then [body.api_mvp - 1, body.api_mvp_combined - 1] else [body.api_mvp - 1, body.api_mvp - 1]
+            dropItem: body.api_get_useitem
             dropShipId: if body.api_get_ship? then body.api_get_ship.api_ship_id else -1
             deckShipId: if combined then _decks[0].api_ship.concat(_decks[1].api_ship) else Object.clone _decks[deckId].api_ship
-            deckHp: if combined then _sortieHp.concat(_combinedHp)
+            deckHp: if combined then _sortieHp.concat(_combinedHp) else _sortieHp
             enemyShipId: Object.clone enemyShipId
             enemyFormation: enemyFormation
             enemyHp: Object.clone _enemyHp

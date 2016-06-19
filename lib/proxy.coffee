@@ -1,26 +1,103 @@
 Promise = require 'bluebird'
 async = Promise.coroutine
+zlib = Promise.promisifyAll require 'zlib'
 EventEmitter = require 'events'
 url = require 'url'
 net = require 'net'
 http = require 'http'
+path = require 'path'
 querystring = require 'querystring'
 _ = require 'underscore'
 caseNormalizer = require 'header-case-normalizer'
 fs = Promise.promisifyAll require 'fs-extra'
-request = Promise.promisifyAll require 'request'
-requestAsync = Promise.promisify request
-shadowsocks = require 'shadowsocks'
+request = require 'request'
 mime = require 'mime'
 socks = require 'socks5-client'
 SocksHttpAgent = require 'socks5-http-client/lib/Agent'
+PacProxyAgent = require 'pac-proxy-agent'
+{app} = require 'electron'
 
 config = require './config'
-{log, warn, error, resolveBody, isStaticResource, findHack, findHackExPath, findCache, findCacheExPath} = require './utils'
+{log, warn, error} = require './utils'
+
+resolveBody = (encoding, body) ->
+  return new Promise async (resolve, reject) ->
+    try
+      decoded = null
+      switch encoding
+        when 'gzip'
+          decoded = yield zlib.gunzipAsync body
+        when 'deflate'
+          decoded = yield zlib.inflateAsync body
+        else
+          decoded = body
+      decoded = decoded.toString()
+      decoded = decoded.substring(7) if decoded.indexOf('svdata=') == 0
+      decoded = JSON.parse decoded
+      resolve decoded
+    catch e
+      reject e
+isStaticResource = (pathname, hostname) ->
+  # KanColle
+  return true if pathname.startsWith('/kcs/') && pathname.indexOf('Core.swf') == -1
+  return true if pathname.startsWith('/gadget/')
+  return true if pathname.startsWith('/kcscontents/')
+  # Kanpani
+  return true if hostname?.match('kanpani.jp')?
+  # ShiroPro
+  return true if hostname?.match('assets.shiropro-re.net')?
+  # Shinken
+  return true if hostname?.match('swordlogic.com')?
+  # FlowerKnightGirl
+  return true if hostname?.match('dugrqaqinbtcq.cloudfront.net')?
+  # ToukenRanbu
+  return true if hostname?.match('static.touken-ranbu.jp')?
+  # Not Static Resource
+  return false
+getCachePath = (pathname) ->
+  dir = config.get 'poi.cachePath', global.DEFAULT_CACHE_PATH
+  path.join dir, pathname
+findHack = (pathname) ->
+  loc = getCachePath path.join 'KanColle', pathname
+  sp = loc.split '.'
+  ext = sp.pop()
+  sp.push 'hack'
+  sp.push ext
+  loc = sp.join '.'
+  try
+    fs.accessSync loc, fs.R_OK
+    return loc
+  catch
+    return null
+findCache = (pathname, hostname) ->
+  if hostname?.match('kanpani.jp')?
+    # Kanpani
+    loc = getCachePath path.join 'Kanpani', pathname
+  else if hostname?.match('assets.shiropro-re.net')?
+    # ShiroPro
+    loc = getCachePath path.join 'ShiroPro', pathname
+  else if hostname?.match('swordlogic.com')?
+    # Shinken
+    loc = getCachePath path.join 'Shinken', pathname.replace(/^\/[0-9]{10}/, '')
+  else if hostname?.match('dugrqaqinbtcq.cloudfront.net')?
+    # FlowerKnightGirl
+    loc = getCachePath path.join 'FlowerKnightGirls', pathname
+  else if hostname?.match('static.touken-ranbu.jp')?
+    # ToukenRanbu
+    loc = getCachePath path.join 'ToukenRanbu', pathname
+  else
+    # KanColle
+    loc = getCachePath path.join 'KanColle', pathname
+  try
+    fs.accessSync loc, fs.R_OK
+    return loc
+  catch
+    return null
 
 # Network error retries
 retries = config.get 'poi.proxy.retries', 0
 
+PacAgents = {}
 resolve = (req) ->
   switch config.get 'proxy.use'
     # HTTP Request via SOCKS5 proxy
@@ -30,40 +107,38 @@ resolve = (req) ->
         agentOptions:
           socksHost: config.get 'proxy.socks5.host', '127.0.0.1'
           socksPort: config.get 'proxy.socks5.port', 1080
-    # HTTP Request via Shadowsocks
-    when 'shadowsocks'
-      return _.extend req,
-        agentClass: SocksHttpAgent
-        agentOptions:
-          socksHost: '127.0.0.1'
-          socksPort: config.get 'proxy.shadowsocks.local.port', 1080
     # HTTP Request via HTTP proxy
     when 'http'
       host = config.get 'proxy.http.host', '127.0.0.1'
       port = config.get 'proxy.http.port', 8118
+      requirePassword = config.get 'proxy.http.requirePassword', false
+      username = config.get 'proxy.http.username', ''
+      password = config.get 'proxy.http.password', ''
+      useAuth = requirePassword && username isnt '' && password isnt ''
+      strAuth = "#{username}:#{password}@"
       return _.extend req,
-        proxy: "http://#{host}:#{port}"
+        proxy: "http://#{if useAuth then strAuth else ''}#{host}:#{port}"
+    # PAC
+    when 'pac'
+      uri = config.get('proxy.pacAddr')
+      PacAgents[uri] ?= new PacProxyAgent(uri)
+      _.extend req,
+        agent: PacAgents[uri]
     # Directly
     else
       return req
 
+isKancolleGameApi = (pathname) ->
+  pathname.startsWith '/kcsapi'
+
 class Proxy extends EventEmitter
   constructor: ->
     super()
-    @startShadowsocks()
     @load()
-  # Start Shadowsocks local server
-  startShadowsocks: ->
-    return unless config.get('proxy.use') == 'shadowsocks'
-    host = config.get 'proxy.shadowsocks.server.host', '127.0.0.1'
-    port = config.get 'proxy.shadowsocks.server.port', 8388
-    local = config.get 'proxy.shadowsocks.local.port', 1080
-    password = config.get 'proxy.shadowsocks.password', 'PASSWORD'
-    method = config.get 'proxy.shadowsocks.method', 'aes-256-cfb'
-    timeout = config.get 'proxy.shadowsocks.timeout', 600000
-    @sslocal = shadowsocks.createServer host, port, local, password, method, timeout, '127.0.0.1'
   load: ->
     self = @
+    serverList = fs.readJsonSync path.join ROOT, 'assets', 'data', 'server.json'
+    currentServer = null
     # HTTP Requests
     @server = http.createServer (req, res) ->
       delete req.headers['proxy-connection']
@@ -71,10 +146,14 @@ class Proxy extends EventEmitter
       req.headers['connection'] = 'close'
       parsed = url.parse req.url
       isGameApi = parsed.pathname.startsWith '/kcsapi'
+      if isGameApi && serverList[parsed.hostname]? && currentServer != serverList[parsed.hostname].num
+        currentServer = serverList[parsed.hostname].num
+        self.emit 'network.get.server', _.extend serverList[parsed.hostname],
+          ip: parsed.hostname
       cacheFile = null
-      if isStaticResource(parsed.pathname)
-        cacheFile = findHack(parsed.pathname) || findHackExPath(parsed.pathname) || findCache(parsed.pathname) || findCacheExPath(parsed.pathname)
-      reqBody = new Buffer(0)
+      if isStaticResource(parsed.pathname, parsed.hostname)
+        cacheFile = findHack(parsed.pathname) || findCache(parsed.pathname, parsed.hostname)
+      reqBody = Buffer.alloc(0)
       # Get all request body
       req.on 'data', (data) ->
         reqBody = Buffer.concat [reqBody, data]
@@ -96,58 +175,60 @@ class Proxy extends EventEmitter
             # Cache is new
             if req.headers['if-modified-since']? && (new Date(req.headers['if-modified-since']) >= stats.mtime)
               res.writeHead 304,
-                'Server': 'Apache'
+                'Server': 'nginx'
                 'Last-Modified': stats.mtime.toGMTString()
               res.end()
             # Cache is old
             else
               data = yield fs.readFileAsync cacheFile
               res.writeHead 200,
-                'Server': 'Apache'
+                'Server': 'nginx'
                 'Content-Length': data.length
                 'Content-Type': mime.lookup cacheFile
                 'Last-Modified': stats.mtime.toGMTString()
               res.end data
           # Enable retry for game api
-          else if isGameApi
+          else
+            domain = req.headers.origin
+            pathname = parsed.pathname
+            requrl = req.url
             success = false
             for i in [0..retries]
               break if success
               try
                 # Emit request event to plugins
-                self.emit 'game.on.request', req.method, parsed.pathname, querystring.parse reqBody.toString()
+                reqBody = JSON.stringify(querystring.parse reqBody.toString())
+                self.emit 'network.on.request', req.method, [domain, pathname, requrl], reqBody
                 # Create remote request
-                [response, body] = yield requestAsync resolve options
+                [response, body] = yield new Promise (promise_resolve, promise_reject) ->
+                  request(resolve(options), (err, res_response, res_body) ->
+                    promise_resolve([res_response, res_body]) if !err?
+                    promise_reject(err)
+                  ).pipe(res)
                 success = true
-                res.writeHead response.statusCode, response.headers
-                res.end body
                 # Emit response events to plugins
-                resolvedBody = yield resolveBody response.headers['content-encoding'], body
+                try
+                  resolvedBody = yield resolveBody response.headers['content-encoding'], body
+                catch e
+                  # Unresolveable binary files are not retried
+                  break
                 if !resolvedBody?
                   throw new Error('Empty Body')
                 if response.statusCode == 200
-                  self.emit 'game.on.response', req.method, parsed.pathname, resolvedBody, querystring.parse reqBody.toString()
-                else if response.statusCode == 503
-                  throw new Error('Service unavailable')
+                  self.emit 'network.on.response', req.method, [domain, pathname, requrl], JSON.stringify(resolvedBody),  reqBody
                 else
-                  self.emit 'network.invalid.code', response.statusCode
+                  self.emit 'network.error', [domain, pathname, requrl], response.statusCode
               catch e
+                success = false
                 error "Api failed: #{req.method} #{req.url} #{e.toString()}"
-                self.emit 'network.error.retry', i + 1 if i < retries
+                self.emit 'network.error.retry', [domain, pathname, requrl], i + 1 if i < retries
+              if success || !isKancolleGameApi pathname
+                break
               # Delay 3s for retry
-              yield Promise.delay(3000) unless success
-          else
-            [response, body] = yield requestAsync resolve options
-            res.writeHead response.statusCode, response.headers
-            res.end body
-          if parsed.pathname in ['/kcs/mainD2.swf', '/kcsapi/api_start2', '/kcsapi/api_get_member/basic']
-            self.emit 'game.start'
-          else if req.url.startsWith 'http://www.dmm.com/netgame/social/application/-/purchase/=/app_id=854854/payment_id='
-            self.emit 'game.payitem'
+              yield Promise.delay(3000)
         catch e
           error "#{req.method} #{req.url} #{e.toString()}"
-          if req.url.startsWith('http://www.dmm.com/netgame/') or req.url.indexOf('/kcs/') != -1 or req.url.indexOf('/kcsapi/') != -1
-            self.emit 'network.error'
+          self.emit 'network.error', [domain, pathname, requrl]
     # HTTPS Requests
     @server.on 'connect', (req, client, head) ->
       delete req.headers['proxy-connection']
@@ -161,20 +242,6 @@ class Proxy extends EventEmitter
           remote = socks.createConnection
             socksHost: config.get 'proxy.socks5.host', '127.0.0.1'
             socksPort: config.get 'proxy.socks5.port', 1080
-            host: remoteUrl.hostname
-            port: remoteUrl.port
-          remote.on 'connect', ->
-            client.write "HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n"
-            remote.write head
-          client.on 'data', (data) ->
-            remote.write data
-          remote.on 'data', (data) ->
-            client.write data
-        # Write data directly to Shadowsocks
-        when 'shadowsocks'
-          remote = socks.createConnection
-            socksHost: config.get '127.0.0.1'
-            socksPort: config.get 'proxy.shadowsocks.local.port', 1080
             host: remoteUrl.hostname
             port: remoteUrl.port
           remote.on 'connect', ->
@@ -221,8 +288,14 @@ class Proxy extends EventEmitter
       remote.on 'timeout', ->
         client.destroy()
         remote.destroy()
-    listenPort = config.get 'poi.port', 12450
-    @server.listen listenPort, ->
-      log "Proxy listening on #{listenPort}"
+    @server.on 'error', (err) =>
+      error err
+    listenPort = config.get('proxy.port', 0)
+    @server.listen listenPort, '127.0.0.1', =>
+      @port = @server.address().port
+      app.commandLine.appendSwitch 'proxy-server', "127.0.0.1:#{@port}"
+      app.commandLine.appendSwitch 'ignore-certificate-errors'
+      app.commandLine.appendSwitch 'ssl-version-fallback-min', "tls1"
+      log "Proxy listening on #{@port}"
 
 module.exports = new Proxy()

@@ -10,16 +10,16 @@
   align-items: center;
 }
 #SettingsView #navigator-bar {
-  margin-bottom: 0px;
+  margin-bottom: 0;
 }
 #SettingsView #navigator-bar .form-group {
-  margin-bottom: 0px;
+  margin-bottom: 0;
 }
 #SettingsView #navigator-bar .container .btn-group {
   float: right;
 }
 #SettingsView #poi-config .form-group {
-  margin-bottom: 0px;
+  margin-bottom: 0;
 }
 #SettingsView #poi-config #poi-resolutionr-config {
   display: flex;
@@ -43,4 +43,168 @@
   border: none;
   box-shadow: none;
   padding: 0;
+}
+#SettingsView .nav-pills > li > a {
+  padding-left: 0;
+  padding-right: 0;
+}
+#SettingsView .notif-button {
+  flex: 1;
+}
+#SettingsView .notif-container {
+  display: flex;
+  flex-direction: row;
+  padding-bottom: 6px;
+}
+#SettingsView .notif-input-desc {
+  padding: 6px 0;
+}
+#SettingsView .folder-picker {
+  width: 100%;
+  height: 100%;
+  border-width: 2px;
+  border-color: #666;
+  border-style: dashed;
+  border-radius: 0;
+  text-align: center;
+  padding: 5px;
+  cursor: pointer;
+}
+#SettingsView .div-col {
+  display: flex;
+  flex-flow: column;
+}
+#SettingsView .div-row {
+  display: flex;
+  flex-flow: row;
+}
+#SettingsView .control-button {
+  margin: 0;
+  height: 30px;
+}
+#SettingsView .control-button > button,
+#SettingsView .plugin-control-button {
+  padding: 5px 7px;
+}
+#SettingsView #mirror-select {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+#SettingsView button .fa {
+  margin-right: 2px;
+}
+#SettingsView .author-link,
+#SettingsView .update-label,
+#SettingsView .update-label span {
+  cursor: pointer;
+}
+#SettingsView .update-wrapper {
+  padding-top: 2px;
+  margin-left: auto;
+  display: flex;
+}
+#SettingsView .author-link:hover {
+  -webkit-filter: drop-shadow(0px 0px 4px #2196F3)
+}
+#SettingsView .author-wrapper {
+  padding-top: 2px;
+  padding-left: 2px;
+}
+#SettingsView .plugin-wrapper {
+}
+#SettingsView .plugin-content {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+#SettingsView .plugin-content-disabled .plugin-name,
+#SettingsView .plugin-content-disabled .author-wrapper,
+#SettingsView .plugin-content-disabled .plugin-description {
+  opacity: 0.5;
+}
+#SettingsView .plugin-content > .panel-body {
+  padding: 10px;
+}
+#SettingsView .plugin-name {
+  font-size: 150%;
+}
+#SettingsView .plugin-description {
+  min-height: 30px;
+  padding-top: 5px;
+}
+#SettingsView .plugin-option {
+  z-index: 1;
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+}
+#SettingsView .plugin-option-install {
+  z-index: 1;
+  position: absolute;
+  bottom: 10px;
+  right: 11px;
+}
+#SettingsView .plugin-buttongroup {
+  margin-left: auto;
+  display: block;
+}
+.popover-content .container {
+  width: auto;
+}
+#SettingsView .contents-wrapper {
+}
+#SettingsView .plugin-rowspace {
+  margin-bottom: 5px;
+}
+#SettingsView .select-npm-server {
+}
+#SettingsView .btn-xs-4 {
+  width: 33.33333333%;
+}
+#SettingsView .btn-xs-6 {
+  width: 50%;
+}
+#SettingsView .btn-xs-8 {
+  width: 66.66666666%;
+}
+#SettingsView .btn-xs-12 {
+  width: 100%;
+}
+#SettingsView .navigator {
+  display: flex;
+}
+#SettingsView .navigator-url {
+  flex: 1;
+  margin-left: 15px;
+  margin-right: 15px;
+  display: flex;
+}
+#SettingsView .navigator-url .form-group {
+  flex: 1;
+}
+#SettingsView .navigator .navigator-url .navigator-status {
+  padding-right: 28px;
+}
+#SettingsView .navigator .navigator-url .status-icon .fa {
+  background-color: transparent;
+  border: 0;
+  padding: 0;
+  height: auto;
+  margin: auto;
+  transition: none;
+  width: auto;
+}
+#SettingsView .navigator .navigator-url .status-icon {
+  width: 0;
+  position: relative;
+  left: -22px;
+  padding: 0;
+  background: transparent;
+  margin: auto;
+  border: 0;
+}
+#SettingsView .navigator-btn {
+  width: 110px;
+}
+#SettingsView .navigator-btn button {
+  width: 30px;
 }

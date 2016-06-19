@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <title>poi</title>
-  <link rel="stylesheet" id="bootstrap-css" href="./components/bootstrap/dist/css/bootstrap.css">
-  <link rel="stylesheet" href="./components/font-awesome/css/font-awesome.min.css">
+  <link rel="stylesheet" id="bootstrap-css">
+  <link rel="stylesheet" id="fontawesome-css">
   <link rel="stylesheet" href="./assets/css/app.css">
-  <link rel="stylesheet" id="layout-css" href="./assets/css/layout.horizonal.css">
+  <link rel="stylesheet" id="layout-css" href="./assets/css/layout.horizontal.css">
   <script>
     require('coffee-script/register');
+    require('babel-register')(require('./babel.config'));
     require('./views/env');
-    require('./views/battle-env')
-    require('./views/layout');
+    require('./views/battle-env');
   </script>
 </head>
 <body>
@@ -19,13 +19,13 @@
   <poi-main>
     <kan-game>
       <div id="webview-wrapper" style="height: 480px">
-        <webview src="http://www.dmm.com/netgame/social/application/-/detail/=/app_id=854854/" ondrop="event.preventDefault();" plugins disablewebsecurity style="height: 480px;"></webview>
+        <webview src="about:blank" ondrop="event.preventDefault();" plugins disablewebsecurity preload="./assets/js/webview-preload.js"></webview>
       </div>
       <hr>
       <poi-info>
+        <poi-control></poi-control>
         <poi-alert></poi-alert>
         <poi-map-reminder></poi-map-reminder>
-        <poi-control></poi-control>
       </poi-info>
       <hr>
     </kan-game>
@@ -33,14 +33,16 @@
       <poi-modal-trigger />
     </poi-modal>
     <poi-app>
-      <poi-nav>
-        <poi-nav-tabs />
-      </poi-nav>
+      <div id='poi-app-container'>
+        <poi-nav>
+          <poi-nav-tabs />
+        </poi-nav>
+      </div>
     </poi-app>
   </poi-main>
   <script>
     require('./views/app');
-    require('./views/update');
+    require('./views/services');
   </script>
 </body>
 </html>

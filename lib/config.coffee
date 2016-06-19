@@ -6,24 +6,33 @@ CSON = require 'cson'
 
 {ROOT, EXROOT} = global
 
-config = {}
+if not dbg? then dbg = require './debug'
+
+config = null
 configCache = {}
 defaultConfigPath = path.join(ROOT, 'config.cson')
 configPath = path.join(EXROOT, 'config.cson')
-
-# Read saved config
-try
-  fs.accessSync defaultConfigPath, fs.R_OK | fs.W_OK
-  config = CSON.parseCSONFile defaultConfigPath
-catch e
-  warn e
 
 # Read user config
 try
   fs.accessSync configPath, fs.R_OK | fs.W_OK
   config = CSON.parseCSONFile configPath
+  dbg.log "Config loaded from: #{configPath}"
 catch e
-  warn e
+  dbg.log e
+
+# Read saved config
+if !config?
+  try
+    fs.accessSync defaultConfigPath, fs.R_OK
+    config = CSON.parseCSONFile defaultConfigPath
+    dbg.log "Config loaded from: #{defaultConfigPath}"
+  catch e
+    dbg.log e
+
+if !config?
+  config = {}
+  warn 'cannot read config.cson'
 
 module.exports =
   get: (path, value) ->
@@ -49,3 +58,6 @@ module.exports =
       fs.writeFileSync configPath, CSON.stringify(config, null, 2)
     catch e
       warn e
+  setDefault: (path, value) ->
+    if !this.get(path)
+      this.set(path, value)

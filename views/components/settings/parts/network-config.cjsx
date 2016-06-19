@@ -1,34 +1,25 @@
 path = require 'path-extra'
-i18n = require 'i18n'
 {$, $$, _, React, ReactBootstrap, ROOT, toggleModal} = window
 {config} = window
 {Input, Grid, Col, Button, Alert} = ReactBootstrap
-{__, __n} = i18n
+__ = i18n.setting.__.bind(i18n.setting)
+__n = i18n.setting.__n.bind(i18n.setting)
 Divider = require './divider'
-
-shadowsocksMethods = ["aes-256-cfb", "aes-192-cfb", "aes-128-cfb", "bf-cfb",
-                      "camellia-256-cfb", "camellia-192-cfb", "camellia-128-cfb",
-                      "cast5-cfb", "des-cfb", "idea-cfb", "rc2-cfb", "rc4", "rc4-md5"]
 
 basic =
   use: 'none',
+  pacAddr: ''
   http:
     host: '127.0.0.1'
     port: 8099
+    requirePassword: false
+    username: ''
+    password: ''
   socks5:
     host: "127.0.0.1",
     port: 1080
-  shadowsocks:
-    server:
-      host: "116.251.209.211",
-      port: 27017
-    local:
-      port: 12451
-    password: "@_PoiPublic_@",
-    method: "aes-256-cfb",
-    timeout: 600000,
-    port: "@_PoiPublic_@"
   retries: config.get 'poi.proxy.retries', 0
+  port: 0
 
 NetworkConfig = React.createClass
   getInitialState: ->
@@ -43,18 +34,27 @@ NetworkConfig = React.createClass
         config.set 'proxy.use', 'http'
         config.set 'proxy.http.host', @refs.httpHost.getValue()
         config.set 'proxy.http.port', @refs.httpPort.getValue()
+        config.set 'proxy.http.requirePassword', @refs.httpRequirePassword.getChecked()
+        config.set 'proxy.http.username', @refs.httpUsername.getValue()
+        config.set 'proxy.http.password', @refs.httpPassword.getValue()
       when 'socks5'
         config.set 'proxy.use', 'socks5'
         config.set 'proxy.socks5.host', @refs.socksHost.getValue()
         config.set 'proxy.socks5.port', @refs.socksPort.getValue()
-      when 'shadowsocks'
-        config.set 'proxy.use', 'shadowsocks'
-        config.set 'proxy.shadowsocks.server.host', @refs.shadowsocksServerHost.getValue()
-        config.set 'proxy.shadowsocks.server.port', @refs.shadowsocksServerPort.getValue()
-        config.set 'proxy.shadowsocks.password', @refs.shadowsocksPassword.getValue()
-        config.set 'proxy.shadowsocks.method', @refs.shadowsocksMethod.getValue()
+      when 'pac'
+        config.set 'proxy.use', 'pac'
+        config.set 'proxy.pacAddr', @refs.pacAddr.getValue()
       else
         config.set 'proxy.use', 'none'
+    retries = parseInt @refs.retries.getValue()
+    retries = 0 if isNaN(retries)
+    config.set 'poi.proxy.retries', retries
+    port = parseInt @refs.port.getValue()
+    port = 0 if isNaN(port) || port < 1024 || port > 65535
+    config.set 'proxy.port', port
+    @setState
+      retries: retries
+      port: port
     toggleModal __('Proxy setting'), __('Success! It will be available after a restart.')
     e.preventDefault()
   handleHttpHostChange: (e) ->
@@ -65,6 +65,18 @@ NetworkConfig = React.createClass
     {http} = @state
     http.port = e.target.value
     @setState {http}
+  handleSetHttpRequirePassword: (e) ->
+    {http} = @state
+    http.requirePassword = !http.requirePassword
+    @setState {http}
+  handleHttpUsernameChange: (e) ->
+    {http} = @state
+    http.username = e.target.value
+    @setState {http}
+  handleHttpPasswordChange: (e) ->
+    {http} = @state
+    http.password = e.target.value
+    @setState {http}
   handleSocksHostChange: (e) ->
     {socks5} = @state
     socks5.host = e.target.value
@@ -73,28 +85,15 @@ NetworkConfig = React.createClass
     {socks5} = @state
     socks5.port = e.target.value
     @setState {socks5}
-  handleShadowsocksServerHostChange: (e) ->
-    {shadowsocks} = @state
-    shadowsocks.server.host = e.target.value
-    @setState {shadowsocks}
-  handleShadowsocksServerPortChange: (e) ->
-    {shadowsocks} = @state
-    shadowsocks.server.port = e.target.value
-    @setState {shadowsocks}
-  handleShadowsocksPasswordChange: (e) ->
-    {shadowsocks} = @state
-    shadowsocks.password = e.target.value
-    @setState {shadowsocks}
-  handleShadowsocksMethodChange: (e) ->
-    {shadowsocks} = @state
-    shadowsocks.method = e.target.value
-    @setState {shadowsocks}
+  handlePACAddrChange: (e) ->
+    pacAddr = e.target.value
+    @setState {pacAddr}
   handleSetRetries: (e) ->
     @setState
       retries: e.target.value
-    r = parseInt(e.target.value)
-    return if isNaN(r) || r < 0
-    config.set 'poi.proxy.retries', r
+  handleSetPort: (e) ->
+    @setState
+      port: e.target.value
   render: ->
     <form>
       <Divider text={__ 'Proxy protocol'} />
@@ -103,7 +102,7 @@ NetworkConfig = React.createClass
           <Input type="select" ref="use" value={@state.use || "none"} onChange={@handleChangeUse}>
             <option key={0} value="http">HTTP {__ "proxy"}</option>
             <option key={1} value="socks5">Socks5 {__ "proxy"}</option>
-            <option key={2} value="shadowsocks">Shadowsocks</option>
+            <option key={2} value="pac">PAC {__ "file"} ({__ "Experimental"})</option>
             <option key={3} value="none">{__ "No proxy"}</option>
           </Input>
         </Col>
@@ -113,39 +112,39 @@ NetworkConfig = React.createClass
         if @state.use == 'http'
           <Grid>
             <Col xs={6}>
-              <Input type="text" ref="httpHost" label={__ 'Proxy server address'} placeholder="输入代理地址" value={@state?.http?.host} onChange={@handleHttpHostChange} />
+              <Input type="text" ref="httpHost" label={__ 'Proxy server address'} placeholder={__ 'Proxy server address'} value={@state?.http?.host} onChange={@handleHttpHostChange} />
             </Col>
             <Col xs={6}>
-              <Input type="text" ref="httpPort" label={__ 'Proxy server port'} placeholder="输入代理端口" value={@state?.http?.port} onChange={@handleHttpPortChange} />
+              <Input type="text" ref="httpPort" label={__ 'Proxy server port'} placeholder={__ 'Proxy server port'} value={@state?.http?.port} onChange={@handleHttpPortChange} />
             </Col>
+            <Col xs={12}>
+              <Input type='checkbox' ref="httpRequirePassword" label={__ 'Proxy server requires password'} checked={!!@state?.http?.requirePassword} onChange={@handleSetHttpRequirePassword} />
+            </Col>
+            {
+
+                <div style={if !@state.http.requirePassword then {display: 'none'} else {}} >
+                  <Col xs={6}>
+                    <Input type="text" ref="httpUsername" label={__ 'Username'} placeholder={__ 'Username'} value={@state?.http?.username} onChange={@handleHttpUsernameChange} />
+                  </Col>
+                  <Col xs={6}>
+                    <Input type="password" ref="httpPassword" label={__ 'Password'} placeholder={__ 'Password'} value={@state?.http?.password} onChange={@handleHttpPasswordChange} />
+                  </Col>
+                </div>
+            }
           </Grid>
         else if @state.use == 'socks5'
           <Grid>
             <Col xs={6}>
-              <Input type="text" ref="socksHost" label={__ 'Proxy server address'} placeholder="输入代理地址" value={@state?.socks5?.host} onChange={@handleSocksHostChange} />
+              <Input type="text" ref="socksHost" label={__ 'Proxy server address'} placeholder={__ 'Proxy server address'} value={@state?.socks5?.host} onChange={@handleSocksHostChange} />
             </Col>
             <Col xs={6}>
-              <Input type="text" ref="socksPort" label={__ 'Proxy server port'} placeholder="输入代理端口" value={@state?.socks5?.port} onChange={@handleSocksPortChange} />
+              <Input type="text" ref="socksPort" label={__ 'Proxy server port'} placeholder={__ 'Proxy server port'} value={@state?.socks5?.port} onChange={@handleSocksPortChange} />
             </Col>
           </Grid>
-        else if @state.use == 'shadowsocks'
+        else if @state.use == 'pac'
           <Grid>
-            <Col xs={6}>
-              <Input type="text" ref="shadowsocksServerHost" label={__ 'Proxy server address'} placeholder="Shadowsocks 服务器地址" value={@state?.shadowsocks?.server?.host} onChange={@handleShadowsocksServerHostChange} />
-            </Col>
-            <Col xs={6}>
-              <Input type="text" ref="shadowsocksServerPort" label={__ 'Proxy server port'} placeholder="Shadowsocks 服务器端口" value={@state?.shadowsocks?.server?.port} onChange={@handleShadowsocksServerPortChange} />
-            </Col>
-            <Col xs={6}>
-              <Input type="password" ref="shadowsocksPassword" label={__ 'Password'} placeholder="Shadowsocks 密码" value={@state?.shadowsocks?.password} onChange={@handleShadowsocksPasswordChange} />
-            </Col>
-            <Col xs={6}>
-              <Input type="select" ref="shadowsocksMethod" label={__ 'Encryption algorithm'} placeholder="Shadowsocks 加密方式" value={@state?.shadowsocks?.method} onChange={@handleShadowsocksMethodChange}>
-              {
-                shadowsocksMethods.map (method, index) ->
-                  <option key={index} value={method}>{method.toUpperCase()}</option>
-              }
-              </Input>
+            <Col xs={12}>
+              <Input type="text" ref="pacAddr" label={__ 'PAC address'} placeholder={__ 'PAC address'} value={@state?.pacAddr} onChange={@handlePACAddrChange} />
             </Col>
           </Grid>
         else
@@ -164,6 +163,12 @@ NetworkConfig = React.createClass
           <Alert bsStyle='danger'>
             {__ 'It may be unsafe!'}
           </Alert>
+        </Col>
+      </Grid>
+      <Divider text={__ 'poi port'} />
+      <Grid>
+        <Col xs={12}>
+          <Input type="number" ref="port" value={@state.port} onChange={@handleSetPort} placeholder={__ "Default: 0 (Use random port)"} />
         </Col>
       </Grid>
       <Divider text={__ 'Save settings'} />

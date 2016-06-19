@@ -1,2 +1,3 @@
 require('coffee-script/register');
-require('./app.coffee');
+require('./lib/cl');
+require('./app');

@@ -2,6 +2,10 @@
   font-size: 12px;
   min-width: 250px;
 }
+#MainView .main-panel-content {
+  position: relative;
+  transition: all .3s ease-in-out;
+}
 #MainView .nav {
   margin-top: -6px;
   margin-bottom: 5px;
@@ -31,6 +35,66 @@
   /*padding: 8px;*/
   width: 100%;
 }
+/*universal*/
+#MainView .bottom-area {
+  height: calc(100% - 39px);
+}
+#MainView .teitoku-panel-area {
+  height: 39px;
+}
+/*horizontal*/
+#MainView .main-area-horizontal {
+  height: 467px;
+  overflow: hidden;
+}
+#MainView .bottom-right-area,
+#MainView .bottom-left-area {
+  height: 100%;
+}
+#MainView .miniship-area-horizontal {
+  height: calc(100% - 96px);
+  min-height: 328px;
+}
+#MainView .resource-panel-area-horizontal{
+  height: 96px;
+}
+
+#MainView .mission-panel-area-horizontal {
+  height: 97px;
+}
+#MainView .combined-panels-area-horizontal {
+  height: 150px;
+}
+#MainView .task-panel-area-horizontal {
+  height: calc(100% - 253px);
+  min-height: 172px;
+}
+/*vertical*/
+#MainView .main-area-vertical {
+  height: 328px;
+}
+#MainView .main-area-vertical .resource-panel .panel-body,
+#MainView .main-area-vertical .combined-panels .panel-body,
+#MainView .main-area-vertical .mission-panel .panel-body {
+  margin-top: 8px;
+}
+#MainView .left-area,
+#MainView .right-bottom-area,
+#MainView .left-bottom-area {
+  height: 100%
+}
+#MainView .resource-panel-area-vertical,
+#MainView .mission-panel-area-vertical {
+  height: 40%;
+}
+#MainView .combined-panels-area-vertical,
+#MainView .task-panel-area-vertical {
+  height: 60%;
+}
+#MainView .miniship-area-vertical {
+  height: 100%;
+}
+/*panels*/
 #MainView .ndock-panel,
 #MainView .kdock-panel,
 #MainView .mission-panel,
@@ -39,7 +103,11 @@
 #MainView .resource-panel {
   white-space: nowrap;
   overflow: hidden;
-  /*width: 49%;*/
+}
+#MainView .mission-panel .panel,
+#MainView .task-panel .panel,
+#MainView .resource-panel .panel {
+  height: calc(100% - 6px)
 }
 #MainView .panel-item {
   padding: 4px;
@@ -151,15 +219,21 @@
 }
 #MainView .resource-panel .panel-body {
   /*border: 1px solid orange;*/
-  padding-top: 4px;
-  padding-bottom: 3px;
+  padding-top: 1px;
+  padding-bottom: 1px;
 }
 #MainView .resource-panel .material-value {
   margin-left: 5px;
 }
+#MainView .resource-panel img {
+  width: 18px;
+  height: 18px;
+}
 #MainView .label {
   font-size: 90%;
   font-weight: normal;
+  padding-top: .2em;
+  padding-bottom: .2em;
 }
 #MainView .panel-body table td {
   overflow: hidden;
@@ -178,4 +252,11 @@
 }
 #MainView .panel-heading {
   padding: 8px;
+}
+#MainView .glow {
+  -webkit-filter: drop-shadow(0px 0px 4px #2196F3)
+}
+.material-icon {
+  width: 18px;
+  height: 18px;
 }
